@@ -1,0 +1,150 @@
+// PRYSM Router Canister Interface
+
+type TokenId = principal;
+type UserId = principal;
+
+type Account = record {
+    owner: principal;
+    subaccount: opt blob;
+};
+
+// Swap types
+type SwapArgs = record {
+    token_in: TokenId;
+    token_out: TokenId;
+    amount_in: nat;
+    amount_out_minimum: nat;
+    pool_id: principal;
+    zero_for_one: bool;
+};
+
+type SwapResult = record {
+    amount_out: nat;
+    fee_amount: nat;
+    token_in: TokenId;
+    token_out: TokenId;
+};
+
+type QuoteArgs = record {
+    pool_id: principal;
+    zero_for_one: bool;
+    amount_in: nat;
+};
+
+type QuoteResult = record {
+    amount_out: nat;
+    price_impact: opt float64;
+};
+
+// Staking types
+type TokenFeeBucket = record {
+    token_id: TokenId;
+    total_fees_collected: nat;
+    total_staked: nat;
+    accumulated_per_share: nat;
+    last_updated: nat64;
+};
+
+type UserStake = record {
+    amount: nat;
+    reward_debt: nat;
+    staked_at: nat64;
+};
+
+type UserStakingStats = record {
+    token_id: TokenId;
+    staked_amount: nat;
+    pending_rewards: nat;
+    lifetime_rewards: nat;
+};
+
+// Trader activity
+type TraderActivity = record {
+    total_volume: nat;
+    trade_count: nat64;
+    last_trade: nat64;
+    activity_points: nat;
+};
+
+// Promotion types
+type PromoBid = record {
+    id: nat64;
+    bidder: principal;
+    token_id: TokenId;
+    bid_amount: nat;
+    created_at: nat64;
+    expires_at: nat64;
+    is_active: bool;
+};
+
+// Error type
+type Error = variant {
+    Unauthorized;
+    InsufficientBalance: record { available: nat; required: nat };
+    InsufficientAllowance: record { allowance: nat; required: nat };
+    SlippageExceeded: record { expected: nat; received: nat };
+    TransferFailed: record { reason: text };
+    InvalidArguments: record { reason: text };
+    PoolNotFound;
+    UnsupportedToken: record { token: TokenId };
+    CanisterCallFailed: record { canister: principal; method: text; reason: text };
+    InternalError: record { reason: text };
+};
+
+type Result = variant { Ok: nat; Err: Error };
+type ResultSwap = variant { Ok: SwapResult; Err: Error };
+type ResultQuote = variant { Ok: QuoteResult; Err: Error };
+type ResultUnit = variant { Ok; Err: Error };
+
+// Init/Upgrade arguments
+type InitArgs = record {
+    pry_ledger: principal;
+    icpswap_factory: principal;
+    admins: vec principal;
+    fee_basis_points: opt nat64;
+    promo_distribution_period: opt nat64;
+};
+
+type UpgradeArgs = record {
+    pry_ledger: opt principal;
+    icpswap_factory: opt principal;
+    admins: opt vec principal;
+    fee_basis_points: opt nat64;
+    promo_distribution_period: opt nat64;
+};
+
+service : (InitArgs) -> {
+    // Admin functions
+    set_fee_basis_points: (nat64) -> (ResultUnit);
+    add_admin: (principal) -> (ResultUnit);
+
+    // Swap functions
+    get_quote: (QuoteArgs) -> (ResultQuote);
+    swap: (SwapArgs) -> (ResultSwap);
+
+    // Staking functions
+    stake: (TokenId, nat) -> (ResultUnit);
+    unstake: (TokenId, nat) -> (ResultUnit);
+    claim_rewards: (TokenId) -> (Result);
+
+    // Promotion functions
+    bid_for_exposure: (TokenId, nat, nat64) -> (Result);
+    get_promoted_token: () -> (opt TokenId) query;
+    get_promo_pool: () -> (nat) query;
+    get_my_refundable_bids: () -> (vec PromoBid) query;
+    get_user_refundable_bids: (principal) -> (vec PromoBid) query;
+    get_my_bids: () -> (vec PromoBid) query;
+    get_user_bids: (principal) -> (vec PromoBid) query;
+    get_my_promo_rewards: () -> (nat) query;
+    get_user_promo_rewards: (principal) -> (nat) query;
+    get_my_distributions: (nat64, nat64) -> (vec DistributionShare) query;
+    get_user_distributions: (principal, nat64, nat64) -> (vec DistributionShare) query;
+
+    // Query functions
+    get_user_stake: (principal, TokenId) -> (opt UserStake) query;
+    get_pending_rewards: (principal, TokenId) -> (nat) query;
+    get_token_bucket: (TokenId) -> (opt TokenFeeBucket) query;
+    get_trader_activity: (principal) -> (opt TraderActivity) query;
+    get_user_stats: (principal, TokenId) -> (UserStakingStats) query;
+    get_stats: () -> (nat, nat64, nat64) query;
+}

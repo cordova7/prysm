@@ -1,0 +1,580 @@
+/**
+ * Controller Popup - Steve Jobs Design Philosophy
+ * Elegant, simple, and powerful controller information display
+ * Features: Hover on desktop, tap on mobile, future-proof for new data
+ */
+
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FiCopy, FiExternalLink, FiLink, FiUser, FiArrowRight } from 'react-icons/fi';
+import TokenDetailModal from './TokenDetailModal';
+import { useInfiniteTokenRelationships } from '@/hooks/useInfiniteTokenRelationships';
+import { useIsClient } from '@/hooks/useIsClient';
+
+export default function ControllerPopup({
+  controller,
+  token,
+  hasRelationships,
+  position = 'top',
+  children,
+}) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [controllerName, setControllerName] = useState(null);
+  const [selectedToken, setSelectedToken] = useState(null);
+  const popupRef = useRef(null);
+  const hideTimeoutRef = useRef(null);
+  const triggerRef = useRef(null);
+  const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
+  const [showAbove, setShowAbove] = useState(false);
+  const [isHovering, setIsHovering] = useState(false);
+  const { isClient } = useIsClient();
+
+  // Use infinite scroll hook for relationships
+  const {
+    relationships,
+    isLoading,
+    hasMore,
+    loadMore,
+    loadedCount,
+    summary,
+  } = useInfiniteTokenRelationships(token?.tokenLedgerId, {
+    batchSize: 50,
+    skip: !isVisible, // Load data when popup becomes visible
+  });
+
+  // Fetch canister name from IC API with localStorage caching
+  useEffect(() => {
+    let isMounted = true;
+    const abortController = new AbortController();
+
+    async function fetchControllerName() {
+      try {
+        const cacheKey = `controller-name-${controller}`;
+
+        // Safely check localStorage with SES/browser extension checks
+        if (isClient && typeof window !== 'undefined' && window.localStorage) {
+          try {
+            const cachedName = window.localStorage.getItem(cacheKey);
+            if (cachedName) {
+              const { name, timestamp } = JSON.parse(cachedName);
+              // Cache is valid for 24 hours
+              if (Date.now() - timestamp < 24 * 60 * 60 * 1000) {
+                if (isMounted) {
+                  setControllerName(name);
+                  return;
+                }
+              }
+            }
+          } catch (e) {
+            // localStorage might be blocked or corrupted
+            console.warn('localStorage access failed, skipping cache');
+          }
+        }
+
+        // Fetch from our proxy API with AbortController
+        const response = await fetch(`/api/ic-api?path=canisters/${controller}`, {
+          signal: abortController.signal
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (isMounted && !abortController.signal.aborted) {
+            const name = data.name || null;
+            setControllerName(name);
+
+            // Cache in localStorage if available
+            if (isClient && typeof window !== 'undefined' && window.localStorage && name) {
+              try {
+                window.localStorage.setItem(cacheKey, JSON.stringify({
+                  name,
+                  timestamp: Date.now()
+                }));
+              } catch (e) {
+                console.warn('Failed to cache controller name');
+              }
+            }
+          }
+        } else if (response.status === 429) {
+          // Rate limited - don't spam the API
+          console.warn('Rate limited by IC API');
+        }
+      } catch (error) {
+        if (error.name !== 'AbortError' && !abortController.signal.aborted) {
+          console.error('Failed to fetch controller name:', error);
+        }
+      }
+    }
+
+    if (isVisible && !controllerName) {
+      fetchControllerName();
+    }
+
+    return () => {
+      isMounted = false;
+      abortController.abort();
+    };
+  }, [isVisible, controller, controllerName, isClient]);
+
+  // Filter relationships to only show this controller
+  const relatedTokens = relationships.filter(rel => {
+    if (!rel.sharedControllers) return false;
+    return rel.sharedControllers.includes(controller);
+  });
+
+  // Intersection observer for infinite scroll
+  const loadMoreRef = useRef(null);
+
+  useEffect(() => {
+    if (!loadMoreRef.current || !hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoading) {
+          loadMore();
+        }
+      },
+      {
+        root: null,
+        rootMargin: '100px',
+        threshold: 0,
+      }
+    );
+
+    observer.observe(loadMoreRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [hasMore, isLoading, loadMore]);
+
+  // Clear hide timeout helper
+  const clearHideTimeout = () => {
+    if (hideTimeoutRef.current) {
+      clearTimeout(hideTimeoutRef.current);
+      hideTimeoutRef.current = null;
+    }
+  };
+
+  // Show popup with position calculation
+  const showPopup = () => {
+    clearHideTimeout();
+    setIsVisible(true);
+    // Use requestAnimationFrame to ensure DOM is ready for measurements
+    requestAnimationFrame(() => {
+      updatePopupPosition();
+    });
+  };
+
+  // Track mouse position for robust hover detection
+  const mousePositionRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      mousePositionRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    if (isVisible) {
+      document.addEventListener('mousemove', handleMouseMove);
+      return () => {
+        document.removeEventListener('mousemove', handleMouseMove);
+      };
+    }
+  }, [isVisible]);
+
+  // Hide popup with delay - allow time to move to popup
+  const hidePopup = () => {
+    clearHideTimeout();
+    hideTimeoutRef.current = setTimeout(() => {
+      setIsVisible(false);
+    }, 300); // Increased from 200ms for more forgiving hover bridge
+  };
+
+  // Desktop: hover to show
+  const handleMouseEnter = () => {
+    setIsHovering(true);
+    showPopup();
+  };
+
+  const handleMouseLeave = () => {
+    setIsHovering(false);
+    hidePopup();
+  };
+
+  // Popup content: keep visible when hovering over it
+  const handlePopupMouseEnter = () => {
+    setIsHovering(true);
+    clearHideTimeout();
+  };
+
+  const handlePopupMouseLeave = () => {
+    setIsHovering(false);
+    hidePopup();
+  };
+
+  const updatePopupPosition = () => {
+    if (!triggerRef.current) {
+      console.warn('ControllerPopup: triggerRef.current is null during position update');
+      return;
+    }
+
+    try {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const scrollX = window.scrollX || window.pageXOffset || 0;
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+
+      // Popup dimensions
+      const isMobile = window.innerWidth < 768;
+      const popupWidth = isMobile ? Math.min(480, window.innerWidth - 32) : 480;
+      const popupMaxHeight = Math.min(600, window.innerHeight * 0.8);
+
+      // Space calculations with fallback
+      const spaceBelow = Math.max(0, window.innerHeight - triggerRect.bottom);
+      const spaceAbove = Math.max(0, triggerRect.top);
+
+      // Determine if popup should show above or below
+      const shouldShowAbove = spaceBelow < 250 && spaceAbove > spaceBelow;
+      setShowAbove(shouldShowAbove);
+
+      // Calculate Y position
+      let y;
+      if (shouldShowAbove) {
+        // Position above trigger with gap
+        y = triggerRect.top + scrollY - popupMaxHeight - 8;
+        // Ensure not above viewport
+        if (y < scrollY + 8) {
+          y = scrollY + 8;
+        }
+      } else {
+        // Position below trigger with gap
+        y = triggerRect.bottom + scrollY + 8;
+      }
+
+      // Calculate X position (centered on trigger, but within viewport)
+      let x = triggerRect.left + scrollX + (triggerRect.width / 2) - (popupWidth / 2);
+
+      // Keep within viewport bounds
+      const margin = isMobile ? 8 : 16;
+      x = Math.max(margin + scrollX, Math.min(x, scrollX + window.innerWidth - popupWidth - margin));
+
+      setPopupPosition({ x, y });
+    } catch (error) {
+      console.error('ControllerPopup: Error calculating position:', error);
+      // Set a safe default position
+      setPopupPosition({ x: 0, y: 0 });
+    }
+  };
+
+  // Mobile: click to toggle
+  const handleClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (isVisible) {
+      clearHideTimeout();
+      setIsVisible(false);
+    } else {
+      showPopup();
+    }
+  };
+
+  // Touch handlers for better mobile support
+  const handleTouchStart = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsHovering(true);
+    showPopup();
+  };
+
+  const handleTouchEnd = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsHovering(false);
+    hidePopup();
+  };
+
+  const handleBackdropClick = (e) => {
+    e.stopPropagation();
+    clearHideTimeout();
+    setIsVisible(false);
+  };
+
+  const handleCopy = async (e) => {
+    e.stopPropagation();
+    clearHideTimeout();
+
+    try {
+      await navigator.clipboard.writeText(controller);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearHideTimeout();
+    };
+  }, []);
+
+  // Update position on window resize or scroll (only when visible)
+  useEffect(() => {
+    if (!isVisible) return;
+
+    const handleUpdate = () => {
+      requestAnimationFrame(() => {
+        updatePopupPosition();
+      });
+    };
+
+    window.addEventListener('resize', handleUpdate);
+    window.addEventListener('scroll', handleUpdate, true);
+
+    return () => {
+      window.removeEventListener('resize', handleUpdate);
+      window.removeEventListener('scroll', handleUpdate, true);
+    };
+  }, [isVisible]);
+
+  // Recalculate position when visibility changes or content updates
+  useEffect(() => {
+    if (isVisible) {
+      // Small delay to let content render
+      const timer = setTimeout(() => {
+        updatePopupPosition();
+      }, 10);
+      return () => clearTimeout(timer);
+    }
+  }, [isVisible, controllerName, relatedTokens.length]);
+
+  return (
+    <div
+      ref={triggerRef}
+      className="relative inline-block w-full"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={handleClick}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchEnd}
+      data-controller-popup-trigger="true"
+      style={{
+        isolation: 'isolate',
+        position: 'relative',
+        zIndex: 'auto' // Removed conditional z-index to prevent conflicts
+      }}
+    >
+      {children}
+
+      <AnimatePresence>
+        {isVisible && (
+          <>
+            {/* Backdrop for mobile tap */}
+            <div
+              className="fixed inset-0 z-40 md:hidden"
+              onClick={handleBackdropClick}
+            />
+
+            {/* Invisible hover bridge to prevent gap between trigger and popup */}
+            {(() => {
+              if (!triggerRef.current) return null;
+              try {
+                const triggerRect = triggerRef.current.getBoundingClientRect();
+                const scrollY = window.scrollY || window.pageYOffset || 0;
+                const bridgeLeft = Math.min(popupPosition.x, triggerRect.left);
+                const bridgeWidth = Math.max(480, triggerRect.width + 100);
+                const bridgeTop = showAbove
+                  ? popupPosition.y
+                  : triggerRect.bottom + scrollY;
+                const bridgeHeight = showAbove
+                  ? triggerRect.top + scrollY - popupPosition.y + 8
+                  : popupPosition.y - (triggerRect.bottom + scrollY) + 8;
+
+                return (
+                  <div
+                    className="fixed hidden md:block"
+                    style={{
+                      left: `${bridgeLeft}px`,
+                      top: `${bridgeTop}px`,
+                      width: `${bridgeWidth}px`,
+                      height: `${Math.max(0, bridgeHeight)}px`,
+                      pointerEvents: 'auto',
+                      zIndex: 49,
+                    }}
+                    onMouseEnter={handlePopupMouseEnter}
+                    onMouseLeave={handlePopupMouseLeave}
+                  />
+                );
+              } catch (error) {
+                console.error('ControllerPopup: Error rendering hover bridge:', error);
+                return null;
+              }
+            })()}
+
+            {/* Popup */}
+            <motion.div
+              ref={popupRef}
+              initial={{ opacity: 0, scale: 0.96, y: showAbove ? 4 : -4 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: showAbove ? 4 : -4 }}
+              transition={{ duration: 0.15, ease: [0.4, 0, 0.2, 1] }}
+              className="fixed"
+              style={{
+                left: `${popupPosition.x}px`,
+                top: `${popupPosition.y}px`,
+                maxHeight: '80vh',
+                pointerEvents: 'none',
+                zIndex: 50,
+              }}
+              onMouseEnter={handlePopupMouseEnter}
+              onMouseLeave={handlePopupMouseLeave}
+            >
+              <div
+                className="bg-[#2a2a27] border border-[#2a2a27] rounded-xl shadow-2xl w-[480px] max-w-[calc(100vw-1rem)] sm:max-w-[calc(100vw-2rem)] max-h-[80vh] flex flex-col"
+                style={{ pointerEvents: 'auto' }}
+              >
+                {/* Header - Steve Jobs Style: Name + Close Button */}
+                <div className="p-4 border-b border-[#2a2a27] flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-light text-[#f6fdff]">
+                      {controllerName || 'Controller'}
+                    </h3>
+                    <p
+                      className="text-sm text-gray-400 mt-1 font-mono cursor-pointer select-all hover:text-gray-400 transition-colors"
+                      onClick={handleCopy}
+                    >
+                      {controller}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      clearHideTimeout();
+                      setIsVisible(false);
+                    }}
+                    className="text-gray-400 hover:text-[#f6fdff] transition-colors p-1"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Related Tokens - Steve Jobs: Make them CLICKABLE! */}
+                {(relatedTokens.length > 0 || isLoading) && (
+                  <div className="p-4 border-b border-[#2a2a27]">
+                    <h4 className="text-sm font-medium text-[#f6fdff] mb-3 flex items-center justify-between">
+                      <span>
+                        Connected Tokens
+                        {loadedCount > 0 && <span className="text-gray-500"> ({loadedCount} loaded)</span>}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {hasMore ? 'Scroll for more' : 'All loaded'}
+                      </span>
+                    </h4>
+                    <div className="max-h-[300px] sm:max-h-[400px] overflow-y-auto pr-2 space-y-1 custom-scrollbar">
+                      {relatedTokens.map((token) => (
+                        <div
+                          key={token.tokenId}
+                          className="flex items-center justify-between p-2 rounded-lg cursor-pointer hover:bg-[#2a2a27] transition-all group"
+                          onClick={() => setSelectedToken(token)}
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="w-6 h-6 bg-[#f6fdff] rounded-full flex items-center justify-center text-[#161614] text-xs font-bold">
+                                {token.symbol?.charAt(0) || 'T'}
+                              </div>
+                              <div>
+                                <p className="text-sm font-medium text-[#f6fdff] truncate">
+                                  {token.symbol}
+                                </p>
+                                <p className="text-xs text-gray-400 truncate">
+                                  {token.name}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 ml-2">
+                            <p className="text-xs text-[#f6fdff]">
+                              ${token.price?.toFixed(6) || '0.000000'}
+                            </p>
+                            <FiArrowRight className="w-3 h-3 text-gray-500 group-hover:text-[#f6fdff]" />
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Loading more indicator */}
+                      {isLoading && loadedCount > 0 && (
+                        <div className="flex items-center justify-center py-3">
+                          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-400"></div>
+                          <span className="ml-2 text-sm text-gray-400">Loading more...</span>
+                        </div>
+                      )}
+
+                      {/* Infinite scroll trigger */}
+                      {hasMore && (
+                        <div ref={loadMoreRef} className="h-10 flex items-center justify-center">
+                          <div className="text-xs text-gray-500">
+                            {isLoading ? 'Loading...' : 'Scroll to load more'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* End of list indicator */}
+                      {!hasMore && loadedCount > 0 && (
+                        <div className="text-center py-2">
+                          <span className="text-xs text-gray-400">
+                            ✓ All tokens loaded ({loadedCount} total)
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* No Relationships */}
+                {!isLoading && relatedTokens.length === 0 && (
+                  <div className="p-4 border-b border-[#2a2a27]">
+                    <p className="text-sm text-gray-400">
+                      No relationships found
+                    </p>
+                  </div>
+                )}
+
+                {/* Initial Loading */}
+                {isLoading && loadedCount === 0 && (
+                  <div className="p-4 border-b border-[#2a2a27]">
+                    <div className="flex items-center gap-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                      <p className="text-sm text-gray-400">Loading tokens...</p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Subtle Footer - Steve Jobs: Just show success */}
+                <div className="px-4 pb-3">
+                  {copied && (
+                    <p className="text-xs text-green-500 text-center animate-fade-in">
+                      ✓ Copied to clipboard
+                    </p>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Token Detail Modal - Steve Jobs: No navigation! */}
+      {selectedToken && (
+        <TokenDetailModal
+          token={selectedToken}
+          onClose={() => setSelectedToken(null)}
+        />
+      )}
+    </div>
+  );
+}

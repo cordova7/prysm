@@ -1,0 +1,38 @@
+[package]
+name = "prysm_router"
+version = "0.1.0"
+edition = "2021"
+description = "PRYSM Router Canister - Swap execution, fee collection, staking, and promotions"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# Internet Computer CDK
+ic-cdk = "0.16"
+ic-cdk-macros = "0.16"
+ic-cdk-timers = "0.10"
+
+# Stable structures for persistent storage
+ic-stable-structures = "0.6"
+
+# Candid for interface definitions
+candid = "0.10"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
+
+# Numeric types
+num-traits = "0.2"
+num-bigint = "0.4"
+
+# SHA256 for account derivation
+sha2 = "0.10"
+
+[profile.release]
+lto = true
+opt-level = 'z'
+
+[features]
+default = []

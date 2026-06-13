@@ -1,0 +1,245 @@
+// PRYSM Router Canister Interface
+
+type TokenId = principal;
+type UserId = principal;
+
+type Account = record {
+    owner: principal;
+    subaccount: opt blob;
+};
+
+// Swap types
+type SwapArgs = record {
+    token_in: TokenId;
+    token_out: TokenId;
+    amount_in: nat;
+    amount_out_minimum: nat;
+    pool_id: principal;
+    zero_for_one: bool;
+};
+
+type SwapResult = record {
+    amount_out: nat;
+    fee_amount: nat;
+    token_in: TokenId;
+    token_out: TokenId;
+};
+
+type QuoteArgs = record {
+    pool_id: principal;
+    zero_for_one: bool;
+    amount_in: nat;
+};
+
+type QuoteResult = record {
+    amount_out: nat;
+    price_impact: opt float64;
+};
+
+// Pool action types
+type AddLimitOrderArgs = record {
+    pool_id: principal;
+    position_id: nat;
+    tick_limit: int;
+};
+
+type RemoveLimitOrderArgs = record {
+    pool_id: principal;
+    position_id: nat;
+};
+
+type MintPositionArgs = record {
+    pool_id: principal;
+    fee: nat;
+    tick_lower: int;
+    tick_upper: int;
+    token0: principal;
+    token1: principal;
+    amount0_desired: nat;
+    amount1_desired: nat;
+};
+
+type IncreaseLiquidityArgs = record {
+    pool_id: principal;
+    position_id: nat;
+    amount0_desired: nat;
+    amount1_desired: nat;
+};
+
+type DecreaseLiquidityArgs = record {
+    pool_id: principal;
+    position_id: nat;
+    liquidity: nat;
+};
+
+type ClaimPositionArgs = record {
+    pool_id: principal;
+    position_id: nat;
+};
+
+type WithdrawArgs = record {
+    pool_id: principal;
+    token: principal;
+    amount: nat;
+    fee: nat;
+};
+
+type TokenAmounts = record {
+    amount0: nat;
+    amount1: nat;
+};
+
+// Staking types
+type TokenFeeBucket = record {
+    token_id: TokenId;
+    total_fees_collected: nat;
+    total_staked: nat;
+    accumulated_per_share: nat;
+    last_updated: nat64;
+};
+
+type UserStake = record {
+    amount: nat;
+    reward_debt: nat;
+    staked_at: nat64;
+};
+
+type UserStakingStats = record {
+    token_id: TokenId;
+    staked_amount: nat;
+    pending_rewards: nat;
+    lifetime_rewards: nat;
+};
+
+// Trader activity
+type TraderActivity = record {
+    total_volume: nat;
+    trade_count: nat64;
+    last_trade: nat64;
+    activity_points: nat;
+};
+
+// Promotion types
+type PromoBid = record {
+    id: nat64;
+    bidder: principal;
+    token_id: TokenId;
+    bid_amount: nat;
+    created_at: nat64;
+    expires_at: nat64;
+    is_active: bool;
+    refunded: bool;
+    added_to_pool: bool;
+};
+
+type ActivePromoBid = record {
+    id: nat64;
+    token_id: TokenId;
+    bid_amount: nat;
+    created_at: nat64;
+    expires_at: nat64;
+};
+
+type PromoDistribution = record {
+    id: nat64;
+    timestamp: nat64;
+    total_amount: nat;
+    total_volume: nat;
+    recipient_count: nat64;
+};
+
+type DistributionShare = record {
+    distribution_id: nat64;
+    recipient: principal;
+    volume: nat;
+    share_amount: nat;
+    claimed: bool;
+};
+
+// Error type
+type Error = variant {
+    Unauthorized;
+    InsufficientBalance: record { available: nat; required: nat };
+    InsufficientAllowance: record { allowance: nat; required: nat };
+    SlippageExceeded: record { expected: nat; received: nat };
+    TransferFailed: record { reason: text };
+    InvalidArguments: record { reason: text };
+    PoolNotFound;
+    UnsupportedToken: record { token: TokenId };
+    CanisterCallFailed: record { canister: principal; method: text; reason: text };
+    InternalError: record { reason: text };
+};
+
+type Result = variant { Ok: nat; Err: Error };
+type ResultSwap = variant { Ok: SwapResult; Err: Error };
+type ResultQuote = variant { Ok: QuoteResult; Err: Error };
+type ResultUnit = variant { Ok; Err: Error };
+type ResultBool = variant { Ok: bool; Err: Error };
+type ResultTokenAmounts = variant { Ok: TokenAmounts; Err: Error };
+type ResultRefunds = variant { Ok: vec record { nat64; nat }; Err: Error };
+
+// Init/Upgrade arguments
+type InitArgs = record {
+    pry_ledger: principal;
+    icpswap_factory: principal;
+    admins: vec principal;
+    fee_basis_points: opt nat64;
+    promo_distribution_period: opt nat64;
+};
+
+type UpgradeArgs = record {
+    pry_ledger: opt principal;
+    icpswap_factory: opt principal;
+    admins: opt vec principal;
+    fee_basis_points: opt nat64;
+    promo_distribution_period: opt nat64;
+};
+
+service : (InitArgs) -> {
+    // Admin functions
+    set_fee_basis_points: (nat64) -> (ResultUnit);
+    add_admin: (principal) -> (ResultUnit);
+
+    // Swap functions
+    get_quote: (QuoteArgs) -> (ResultQuote);
+    swap: (SwapArgs) -> (ResultSwap);
+
+    // Pool action functions
+    add_limit_order: (AddLimitOrderArgs) -> (ResultBool);
+    remove_limit_order: (RemoveLimitOrderArgs) -> (ResultBool);
+    mint_position: (MintPositionArgs) -> (Result);
+    increase_liquidity: (IncreaseLiquidityArgs) -> (Result);
+    decrease_liquidity: (DecreaseLiquidityArgs) -> (ResultTokenAmounts);
+    claim_position: (ClaimPositionArgs) -> (ResultTokenAmounts);
+    withdraw: (WithdrawArgs) -> (Result);
+
+    // Staking functions
+    stake: (TokenId, nat) -> (ResultUnit);
+    unstake: (TokenId, nat) -> (ResultUnit);
+    claim_rewards: (TokenId) -> (Result);
+
+    // Promotion functions
+    bid_for_exposure: (TokenId, nat, nat64) -> (Result);
+    get_promoted_token: () -> (opt TokenId) query;
+    get_active_promo_bid: () -> (opt ActivePromoBid) query;
+    get_promo_pool: () -> (nat) query;
+    claim_bid_refunds: () -> (ResultRefunds);
+    get_my_refundable_bids: () -> (vec PromoBid) query;
+    get_my_bids: () -> (vec PromoBid) query;
+
+    // Query functions
+    get_user_stake: (principal, TokenId) -> (opt UserStake) query;
+    get_pending_rewards: (principal, TokenId) -> (nat) query;
+    get_token_bucket: (TokenId) -> (opt TokenFeeBucket) query;
+    get_trader_activity: (principal) -> (opt TraderActivity) query;
+    get_user_stats: (principal, TokenId) -> (UserStakingStats) query;
+    get_stats: () -> (nat, nat64, nat64) query;
+
+    // Distribution query functions
+    get_distribution_history: (nat64, nat64) -> (vec PromoDistribution) query;
+    get_user_distribution_share: (nat64, principal) -> (opt DistributionShare) query;
+    get_my_promo_rewards: () -> (nat) query;
+    get_my_distributions: (nat64, nat64) -> (vec DistributionShare) query;
+    get_next_distribution_time: () -> (nat64) query;
+    get_period_trader_stats: () -> (vec record { principal; nat; nat64 }) query;
+}
