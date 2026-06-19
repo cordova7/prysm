@@ -1,58 +1,162 @@
 # PRYSM App
 
-Next.js frontend for the PRYSM token platform on the Internet Computer — an ICPSwap aggregator with portfolio tracking, trading analytics, and token promotions.
+Next.js frontend for the PRYSM token platform on the Internet Computer.
+
+## Overview
+
+A modern, responsive frontend for token swaps and portfolio tracking, powered by ICPSwap aggregator and real-time blockchain data.
 
 ## Features
 
-- **Token Swaps** — ICPSwap integration for swapping ICP and ICRC-1 tokens
-- **Portfolio Tracking** — Holdings, transaction history, and P&L analytics
-- **Promotions** — Token distribution campaigns and distribution history
-- **Trading Analytics** — Token holder data, funding sources, and trading activity
-- **Internet Identity** — Seamless wallet-less login via ICP Internet Identity
+- **Token Swaps** - Aggregate liquidity across ICPSwap and other DEXs
+- **Portfolio Tracking** - Monitor your token holdings and transaction history
+- **Analytics Dashboard** - Trading insights and performance metrics
+- **Promotions** - Featured tokens and promotional banners
+- **Wallet Integration** - Connect with Plug, Stoic, or other ICP wallets
 
-## Setup
+## Tech Stack
+
+- **Next.js 14** - App Router with React Server Components
+- **React 18** - Modern UI library
+- **TypeScript** - Type-safe development
+- **Tailwind CSS** - Utility-first styling
+- **Supabase** - Database and authentication
+- **SWR** - Data fetching and caching
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Supabase project (or use local Supabase)
+
+### Installation
 
 ```bash
 # Install dependencies
 npm install
 
-# Copy and fill in environment variables
-cp .env.example .env.local
-# Edit .env.local with your Supabase and ICPSwap credentials
+# Copy environment template
+cp .env.example .env
 
-# Start development server
-npm run dev
+# Edit .env with your configuration
+# Required: NEXT_PUBLIC_SUPABASE_URL
+# Required: NEXT_PUBLIC_SUPABASE_ANON_KEY
 ```
 
-## Environment Variables
+### Environment Variables
 
 ```env
-# Required
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key_here
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key_here
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
-# Required (canister IDs)
-NEXT_PUBLIC_PRYSM_ROUTER_CANISTER_ID=your_router_canister_id
-NEXT_PUBLIC_ICPSWAP_SWAPFACTORY_CANISTER_ID=4mmnk-kiaaa-aaaag-qbllq-cai
-NEXT_PUBLIC_IC_HOST=https://icp0.io
-
-# Optional
-NEXT_PUBLIC_SENTRY_DSN=          # Error monitoring
-UPSTASH_REDIS_REST_URL=          # Rate limiting
-UPSTASH_REDIS_REST_TOKEN=
-NEXT_PUBLIC_ICPSWAP_API_BASE_URL=https://api.icpswap.com
+# Optional APIs
+NEXT_PUBLIC_SENTRY_DSN=your_sentry_dsn
 ```
 
-## Tech Stack
+### Development
 
-- Next.js 14 (App Router)
-- TypeScript
-- Tailwind CSS
-- @dfinity/agent + @dfinity/ledger-icp
-- Supabase (auth + database)
-- Recharts / lightweight-charts
-- Internet Identity (II) for authentication
+```bash
+# Start development server
+npm run dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
+```
+
+## Project Structure
+
+```
+prysm-app/
+├── app/                    # Next.js App Router
+│   ├── layout.tsx         # Root layout
+│   ├── page.tsx           # Home page
+│   └── api/               # API routes
+│
+├── components/            # React components
+│   ├── ui/               # Base UI components
+│   ├── swap/             # Swap-related components
+│   └── portfolio/         # Portfolio components
+│
+├── contexts/              # React contexts
+│   └── WalletContext.tsx  # Wallet state management
+│
+├── hooks/                 # Custom React hooks
+│   ├── useSwap.ts        # Swap functionality
+│   └── usePortfolio.ts   # Portfolio data
+│
+├── lib/                   # Utilities
+│   ├── supabase.ts       # Supabase client
+│   └── icp.ts            # ICP utilities
+│
+├── types/                 # TypeScript definitions
+└── public/                # Static assets
+```
+
+## Key Components
+
+### Swap Interface
+
+```tsx
+import { SwapWidget } from '@/components/swap/SwapWidget';
+
+export default function SwapPage() {
+  return <SwapWidget />;
+}
+```
+
+### Portfolio Dashboard
+
+```tsx
+import { PortfolioOverview } from '@/components/portfolio/Overview';
+
+export default function PortfolioPage() {
+  return <PortfolioOverview />;
+}
+```
+
+## Testing
+
+```bash
+# Run unit tests
+npm run test
+
+# Run with coverage
+npm run test:coverage
+
+# Run e2e tests
+npm run test:e2e
+```
+
+## Deployment
+
+### Vercel (Recommended)
+
+```bash
+# Install Vercel CLI
+npm i -g vercel
+
+# Deploy
+vercel
+```
+
+### Docker
+
+```dockerfile
+FROM node:18-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+EXPOSE 3000
+CMD ["npm", "start"]
+```
 
 ## License
 
